@@ -1,0 +1,246 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  IT_SUPPORT
+  USER
+}
+
+model Department {
+  id        String    @id @default(cuid())
+  code      String    @unique // PB01..PB11
+  name      String    @unique
+  users     User[]
+  devices   Device[]
+  tickets   Ticket[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([code])
+}
+
+model User {
+  id               String            @id @default(cuid())
+  employeeCode     String            @unique // NV0001..NV0180
+  fullName         String
+  departmentId     String
+  department       Department        @relation(fields: [departmentId], references: [id])
+  title            String
+  email            String            @unique
+  phone            String?
+  status           String            @default("Đang làm việc")
+  role             Role              @default(USER)
+  passwordHash     String
+  assignedDevices  Device[]
+  requestedTickets Ticket[]          @relation("TicketRequester")
+  assignedTickets  Ticket[]          @relation("TicketAssignee")
+  ticketHistories  TicketHistory[]
+  maintenances     Maintenance[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([employeeCode])
+  @@index([departmentId])
+  @@index([role])
+}
+
+model DeviceCategory {
+  id        String    @id @default(cuid())
+  name      String    @unique // Máy tính để bàn, Laptop, Switch...
+  devices   Device[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Device {
+  id              String         @id @default(cuid())
+  code            String         @unique // TB00001..TB00900
+  categoryId      String
+  category        DeviceCategory @relation(fields: [categoryId], references: [id])
+  brand           String
+  model           String
+  serial          String?
+  departmentId    String
+  department      Department     @relation(fields: [departmentId], references: [id])
+  assignedUserId  String?
+  assignedUser    User?          @relation(fields: [assignedUserId], references: [id])
+  status          String         @default("Đang sử dụng")
+  purchaseDate    DateTime?
+  warrantyEndDate DateTime?
+  location        String?
+  condition       String?
+  tickets         Ticket[]
+  maintenances    Maintenance[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([code])
+  @@index([departmentId])
+  @@index([categoryId])
+  @@index([assignedUserId])
+  @@index([status])
+}
+
+model TicketCategory {
+  id        String    @id @default(cuid())
+  name      String    @unique // Phần cứng, Phần mềm...
+  tickets   Ticket[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Ticket {
+  id              String          @id @default(cuid())
+  code            String          @unique // YC00001..YC03500
+  receivedAt      DateTime
+  requesterId     String
+  requester       User            @relation("TicketRequester", fields: [requesterId], references: [id])
+  departmentId    String
+  department      Department      @relation(fields: [departmentId], references: [id])
+  deviceId        String?
+  device          Device?         @relation(fields: [deviceId], references: [id])
+  categoryId      String
+  category        TicketCategory  @relation(fields: [categoryId], references: [id])
+  description     String          @db.Text
+  priority        String          // Thấp, Trung bình, Cao, Khẩn cấp
+  status          String          // Mới tiếp nhận, Đang xử lý, Chờ phản hồi, Tạm hoãn, Hoàn thành
+  channel         String          // Biểu mẫu nội bộ, Điện thoại, Email, Trực tiếp
+  assigneeId      String?
+  assignee        User?           @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  resolutionHours Float?
+  completedAt     DateTime?
+  resolution      String?         @db.Text
+  rating          Int?            // 1..5
+  histories       TicketHistory[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([code])
+  @@index([departmentId])
+  @@index([categoryId])
+  @@index([requesterId])
+  @@index([assigneeId])
+  @@index([deviceId])
+  @@index([status])
+  @@index([priority])
+  @@index([receivedAt])
+}
+
+model TicketHistory {
+  id         String   @id @default(cuid())
+  code       String   @unique // LS000001..LS013224
+  ticketId   String
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  happenedAt DateTime
+  action     String   // Tiếp nhận, Phân loại, Xử lý, Hoàn thành...
+  content    String   @db.Text
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([actorId])
+  @@index([happenedAt])
+}
+
+model Maintenance {
+  id              String    @id @default(cuid())
+  code            String    @unique // BT00001..BT01500
+  deviceId        String
+  device          Device    @relation(fields: [deviceId], references: [id])
+  performedAt     DateTime
+  maintenanceType String    // Kiểm tra định kỳ, Sửa chữa, Thay thế linh kiện...
+  performerId     String
+  performer       User      @relation(fields: [performerId], references: [id])
+  result          String
+  cost            Decimal   @default(0) @db.Decimal(12, 2)
+  nextCheckAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([code])
+  @@index([deviceId])
+  @@index([performerId])
+  @@index([performedAt])
+  @@index([maintenanceType])
+}
+
+model Part {
+  id              String                 @id @default(cuid())
+  code            String                 @unique // LK0001..LK0120
+  name            String
+  unit            String                 // Cái, Thanh, Sợi, Bộ, Cuộn
+  stockQuantity   Int                    @default(0)
+  minimumStock    Int                    @default(0)
+  unitPrice       Decimal                @default(0) @db.Decimal(12, 2)
+  storageLocation String?
+  status          String                 @default("Đang sử dụng")
+  transactions    InventoryTransaction[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([code])
+  @@index([status])
+}
+
+model InventoryTransaction {
+  id         String   @id @default(cuid())
+  code       String   @unique // GD00001..GD01800
+  happenedAt DateTime
+  partId     String
+  part       Part     @relation(fields: [partId], references: [id])
+  type       String   // Nhập, Xuất, Điều chỉnh
+  quantity   Int
+  reference  String?  // PN0005, YC03318...
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([code])
+  @@index([partId])
+  @@index([happenedAt])
+  @@index([type])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  actorId     String?
+  actor       User?    @relation(fields: [actorId], references: [id])
+  actorName   String
+  actorRole   String
+  action      String   // CREATE_USER, UPDATE_USER, LOCK_USER, UNLOCK_USER, RESET_PASSWORD, UPDATE_ROLE, CREATE_DEPT, UPDATE_DEPT, CREATE_CAT, UPDATE_CAT, INVENTORY_TX, IMPORT_DATA
+  entityType  String   // USER, DEPARTMENT, CATEGORY, DEVICE, PART, SYSTEM
+  entityId    String?
+  entityCode  String?
+  description String   @db.Text
+  ipAddress   String?
+
+  @@index([action])
+  @@index([entityType])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String   @db.Text
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
